@@ -43,6 +43,8 @@ import (
 	"container/heap"
 	"context"
 	"time"
+
+	"github.com/jmhodges/clock"
 )
 
 // Config specifies the behavior of Consume. Consume receives messages from a
@@ -68,6 +70,9 @@ type Config struct {
 	// batch before the batch is flushed. If MaxBatchSize is zero, then there
 	// is no maximum.
 	MaxBatchSize int
+	// Clock is the source of time and timers used by Consume. Leave it nil to
+	// use the system clock, or provide a mock instance for testing.
+	Clock clock.Clock
 }
 
 // Consume receives messages from a channel, deals the messages into buckets,
@@ -77,12 +82,17 @@ func Consume(ctx context.Context, config Config) {
 	// batches maps bucket key to the current batch for that bucket.
 	batches := make(map[uint64]*bucket)
 	// timer manages a channel on which we wait for timeouts.
-	var timer *time.Timer
+	var timer *clock.Timer
 	// deadlines is a priority queue of upcoming timeout events (deadlines).
 	var deadlines deadlineHeap
 	// timeout is the channel managed by timer, or nil if there are no upcoming
 	// deadlines.
 	var timeout <-chan time.Time
+
+	// Use the system clock by default.
+	if config.Clock == nil {
+		config.Clock = clock.New()
+	}
 
 	for {
 		// If we have deadlines but no timeout is set, set the timeout channel
@@ -90,7 +100,7 @@ func Consume(ctx context.Context, config Config) {
 		if len(deadlines) != 0 && timeout == nil {
 			duration := time.Until(deadlines[0].When)
 			if timer == nil {
-				timer = time.NewTimer(duration)
+				timer = config.Clock.NewTimer(duration)
 			} else {
 				timer.Reset(duration)
 			}
@@ -99,7 +109,7 @@ func Consume(ctx context.Context, config Config) {
 
 		select {
 		case <-timeout:
-			handleTimeout(&deadlines, batches, config.Flush)
+			handleTimeout(&config, &deadlines, batches)
 
 			// By setting timeout to nil, we signal to the outer loop that the
 			// timeout should be reset. The code is at the top of the loop
@@ -126,7 +136,7 @@ func handleMessage(
 	batches map[uint64]*bucket) {
 	// Calculate the reference point for the next deadline immediately,
 	// so as not to lose time in the following calculations.
-	now := time.Now()
+	now := config.Clock.Now()
 
 	key := config.Key(message)
 	batch := batches[key]
@@ -168,12 +178,12 @@ func handleMessage(
 // handleTimeout is the factored out bulk of the "<-timeout" case in the
 // "select" statement within Consume.
 func handleTimeout(
+	config *Config,
 	deadlines *deadlineHeap,
-	batches map[uint64]*bucket,
-	flush func(uint64, []interface{})) {
+	batches map[uint64]*bucket) {
 	// Process all of the deadlines that are "ready," i.e. in the past
 	// or defunct.
-	now := time.Now()
+	now := config.Clock.Now()
 	deadlineReady := func() bool {
 		if deadlines == nil || len(*deadlines) == 0 {
 			return false
@@ -183,7 +193,7 @@ func handleTimeout(
 		return !now.Before(closest.When) || closest.Disabled
 	}
 
-	for ; deadlineReady(); now = time.Now() {
+	for ; deadlineReady(); now = config.Clock.Now() {
 		passed := heap.Pop(deadlines).(*deadline)
 		if passed.Disabled {
 			continue
@@ -191,7 +201,7 @@ func handleTimeout(
 
 		key := passed.Key
 		batch := batches[key]
-		flush(key, batch.Messages)
+		config.Flush(key, batch.Messages)
 		batch.Reset()
 	}
 }
