@@ -149,11 +149,10 @@ func handleMessage(
 
 	// deadline for receiving next message
 	if batch.MessageDeadline != nil {
-		batch.MessageDeadline.What = defunct
+		batch.MessageDeadline.Disable()
 	}
 	batch.MessageDeadline = pool.Alloc()
 	batch.MessageDeadline.When = now.Add(config.MessageTimeout)
-	batch.MessageDeadline.What = messageTimeoutExpired
 	batch.MessageDeadline.Key = key
 	heap.Push(deadlines, batch.MessageDeadline)
 
@@ -165,7 +164,6 @@ func handleMessage(
 	// was recently empty.
 	batch.BatchDeadline = pool.Alloc()
 	batch.BatchDeadline.When = now.Add(config.BatchTimeout)
-	batch.BatchDeadline.What = batchTimeoutExpired
 	batch.BatchDeadline.Key = key
 	heap.Push(deadlines, batch.BatchDeadline)
 }
@@ -186,13 +184,13 @@ func handleTimeout(
 		}
 		closest := (*deadlines)[0]
 		// The deadline is not in the future, or it's defunct.
-		return !now.Before(closest.When) || closest.What == defunct
+		return !now.Before(closest.When) || closest.Disabled()
 	}
 
 	for ; deadlineReady(); now = time.Now() {
 		passed := heap.Pop(deadlines).(*deadline)
 		pool.Free(passed)
-		if passed.What == defunct {
+		if passed.Disabled() {
 			continue
 		}
 
@@ -203,26 +201,23 @@ func handleTimeout(
 	}
 }
 
-// reason enumerates the types of deadlines
-type reason int
-
-const (
-	// defunct means that this deadline is no longer valid (discard it)
-	defunct = reason(iota)
-	// messageTimeoutExpired means that the batch's _message_ timeout was reached
-	messageTimeoutExpired
-	// batchTimeoutExpired means that the batch's _batch_ timeout was reached
-	batchTimeoutExpired
-)
-
 // deadline describes a future event, such as a batch needing to be flushed.
 type deadline struct {
-	// When is the time at which this deadline is reached (expires).
+	// When is the time at which this deadline is reached (expires); or, if
+	// When is zero, this deadline is considered "disabled" and can be
+	// discarded.
 	When time.Time
-	// What is the type of deadline, i.e. what it's for.
-	What reason
 	// Key is the key of the bucket to which this deadline applies.
 	Key uint64
+}
+
+func (d *deadline) Disable() {
+	var zeroTime time.Time
+	d.When = zeroTime
+}
+
+func (d *deadline) Disabled() bool {
+	return d.When.IsZero()
 }
 
 // deadlineHeap is a min-heap of deadline, where a deadline A is less than
@@ -260,11 +255,11 @@ type bucket struct {
 
 func (b *bucket) Reset() {
 	if b.MessageDeadline != nil {
-		b.MessageDeadline.What = defunct
+		b.MessageDeadline.Disable()
 		b.MessageDeadline = nil
 	}
 	if b.BatchDeadline != nil {
-		b.BatchDeadline.What = defunct
+		b.BatchDeadline.Disable()
 		b.BatchDeadline = nil
 	}
 	b.Messages = nil
