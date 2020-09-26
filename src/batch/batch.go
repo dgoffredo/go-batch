@@ -18,7 +18,7 @@
 // religion to his profile, changes his age preference, and updates his
 // birthday, then the upstream producer might emit several events, possibly in
 // bursts. All of those events, or any contiguous subsequence of them, could be
-// combined by the translater before sending the combined message downstream.
+// combined by the translator before sending the combined message downstream.
 //
 // In order to strike a balance between volume reduction (large batches) and
 // latency reduction (small batches), this package uses a batching scheme
