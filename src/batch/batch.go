@@ -33,8 +33,8 @@
 //
 // The advantage of having two timeouts is that latency can be reduced on
 // average while still allowing for "long runs" of closely-spaced messages to
-// be combined. Typically MessageTimeout is short, while BatchTimeout is
-// longer.
+// be combined. This is possible if MessageTimeout is short, while BatchTimeout
+// is longer.
 //
 // See main.go for a usage example.
 package batch
@@ -44,7 +44,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/jmhodges/clock"
+	"github.com/jmhodges/clock" // mockable wrapper around time functions
 )
 
 // Config specifies the behavior of Consume. Consume receives messages from a
@@ -94,6 +94,7 @@ func Consume(ctx context.Context, config Config) {
 		config.Clock = clock.New()
 	}
 
+Loop:
 	for {
 		// If we have deadlines but no timeout is set, set the timeout channel
 		// appropriately.
@@ -118,11 +119,21 @@ func Consume(ctx context.Context, config Config) {
 			timeout = nil
 		case message, ok := <-config.Source:
 			if !ok {
-				return // config.Source is closed
+				break Loop // config.Source is closed
 			}
 			handleMessage(message, &config, &deadlines, batches)
 		case <-ctx.Done():
-			return
+			break Loop
+		}
+	}
+
+	// Either the message channel was closed or ctx is done. Try to flush any
+	// remaining batches (if ctx is done, we're unlikely to succeed, but if the
+	// message channel was closed, then this might be a "clean shutdown" that
+	// allows us to flush).
+	for key, batch := range batches {
+		if len(batch.Messages) != 0 {
+			config.Flush(key, batch.Messages)
 		}
 	}
 }
@@ -151,6 +162,7 @@ func handleMessage(
 	if config.MaxBatchSize != 0 && len(batch.Messages) > config.MaxBatchSize || config.MessageTimeout == 0 || config.BatchTimeout == 0 {
 		config.Flush(key, batch.Messages)
 		batch.Reset()
+		delete(batches, key)
 		return
 	}
 
@@ -181,15 +193,15 @@ func handleTimeout(
 	config *Config,
 	deadlines *deadlineHeap,
 	batches map[uint64]*bucket) {
-	// Process all of the deadlines that are "ready," i.e. in the past
-	// or defunct.
+	// Process all of the deadlines that are "ready," i.e. in the past or
+	// disabled.
 	now := config.Clock.Now()
 	deadlineReady := func() bool {
 		if deadlines == nil || len(*deadlines) == 0 {
 			return false
 		}
 		closest := (*deadlines)[0]
-		// The deadline is not in the future, or it's defunct.
+		// The deadline is not in the future, or it's disabled.
 		return !now.Before(closest.When) || closest.Disabled
 	}
 
@@ -203,6 +215,7 @@ func handleTimeout(
 		batch := batches[key]
 		config.Flush(key, batch.Messages)
 		batch.Reset()
+		delete(batches, key)
 	}
 }
 
