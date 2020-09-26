@@ -21,7 +21,7 @@ func main() {
 			fmt.Println("flushed bucket for strings of length ", key, ": ", messages)
 		},
 		Source:         messages,
-		MessageTimeout: time.Second * 2,
+		MessageTimeout: time.Second,
 		BatchTimeout:   time.Second * 6}
 
 	go batch.Consume(context.TODO(), config)

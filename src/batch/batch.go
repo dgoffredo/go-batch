@@ -139,12 +139,15 @@ func handleMessage(
 	}
 	batch.Messages = append(batch.Messages, message)
 
-	if config.MaxBatchSize != 0 && len(batch.Messages) > config.MaxBatchSize {
+	// If the batch is full, or if any configured timeouts are zero, then it's
+	// time to flush the batch.
+	if config.MaxBatchSize != 0 && len(batch.Messages) > config.MaxBatchSize || config.MessageTimeout == 0 || config.BatchTimeout == 0 {
 		config.Flush(key, batch.Messages)
 		batch.Reset()
 		return
 	}
 
+	// deadline for receiving next message
 	if batch.MessageDeadline != nil {
 		batch.MessageDeadline.What = defunct
 	}
