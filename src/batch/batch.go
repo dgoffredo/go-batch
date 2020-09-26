@@ -83,8 +83,6 @@ func Consume(ctx context.Context, config Config) {
 	// timeout is the channel managed by timer, or nil if there are no upcoming
 	// deadlines.
 	var timeout <-chan time.Time
-	// pool stores *deadline objects for reuse.
-	var pool deadlinePool
 
 	for {
 		// If we have deadlines but no timeout is set, set the timeout channel
@@ -101,7 +99,7 @@ func Consume(ctx context.Context, config Config) {
 
 		select {
 		case <-timeout:
-			handleTimeout(&deadlines, batches, config.Flush, &pool)
+			handleTimeout(&deadlines, batches, config.Flush)
 
 			// By setting timeout to nil, we signal to the outer loop that the
 			// timeout should be reset. The code is at the top of the loop
@@ -112,7 +110,7 @@ func Consume(ctx context.Context, config Config) {
 			if !ok {
 				return // config.Source is closed
 			}
-			handleMessage(message, &config, &deadlines, batches, &pool)
+			handleMessage(message, &config, &deadlines, batches)
 		case <-ctx.Done():
 			return
 		}
@@ -125,8 +123,7 @@ func handleMessage(
 	message interface{},
 	config *Config,
 	deadlines *deadlineHeap,
-	batches map[uint64]*bucket,
-	pool *deadlinePool) {
+	batches map[uint64]*bucket) {
 	// Calculate the reference point for the next deadline immediately,
 	// so as not to lose time in the following calculations.
 	now := time.Now()
@@ -151,9 +148,9 @@ func handleMessage(
 	if batch.MessageDeadline != nil {
 		batch.MessageDeadline.Disable()
 	}
-	batch.MessageDeadline = pool.Alloc()
-	batch.MessageDeadline.When = now.Add(config.MessageTimeout)
-	batch.MessageDeadline.Key = key
+	batch.MessageDeadline = &deadline{
+		When: now.Add(config.MessageTimeout),
+		Key:  key}
 	heap.Push(deadlines, batch.MessageDeadline)
 
 	// If this is the first message in the batch, set a batch deadline.
@@ -162,9 +159,9 @@ func handleMessage(
 	}
 	// Note: We know that batch.BatchDeadline is nil, because the batch
 	// was recently empty.
-	batch.BatchDeadline = pool.Alloc()
-	batch.BatchDeadline.When = now.Add(config.BatchTimeout)
-	batch.BatchDeadline.Key = key
+	batch.BatchDeadline = &deadline{
+		When: now.Add(config.BatchTimeout),
+		Key:  key}
 	heap.Push(deadlines, batch.BatchDeadline)
 }
 
@@ -173,8 +170,7 @@ func handleMessage(
 func handleTimeout(
 	deadlines *deadlineHeap,
 	batches map[uint64]*bucket,
-	flush func(uint64, []interface{}),
-	pool *deadlinePool) {
+	flush func(uint64, []interface{})) {
 	// Process all of the deadlines that are "ready," i.e. in the past
 	// or defunct.
 	now := time.Now()
@@ -189,7 +185,6 @@ func handleTimeout(
 
 	for ; deadlineReady(); now = time.Now() {
 		passed := heap.Pop(deadlines).(*deadline)
-		pool.Free(passed)
 		if passed.Disabled() {
 			continue
 		}
@@ -263,22 +258,4 @@ func (b *bucket) Reset() {
 		b.BatchDeadline = nil
 	}
 	b.Messages = nil
-}
-
-// deadlinePool is a pool of *deadline objects. This might be a premature
-// optimization, but it's easy and the garbage collector works so hard...
-type deadlinePool []*deadline
-
-func (pool *deadlinePool) Alloc() *deadline {
-	if pool == nil || len(*pool) == 0 {
-		return &deadline{}
-	}
-	n := len(*pool)
-	recycled := (*pool)[n-1]
-	*pool = (*pool)[:n-1]
-	return recycled
-}
-
-func (pool *deadlinePool) Free(d *deadline) {
-	*pool = append(*pool, d)
 }
