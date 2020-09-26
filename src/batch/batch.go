@@ -87,11 +87,6 @@ func Consume(ctx context.Context, config Config) {
 	var pool deadlinePool
 
 	for {
-		whens := make([]time.Time, len(deadlines))
-		for i, d := range deadlines {
-			whens[i] = d.When
-		}
-
 		// If we have deadlines but no timeout is set, set the timeout channel
 		// appropriately.
 		if len(deadlines) != 0 && timeout == nil {
