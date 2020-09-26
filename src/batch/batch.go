@@ -78,7 +78,7 @@ func Consume(ctx context.Context, config Config) {
 	batches := make(map[uint64]*bucket)
 	// timer manages a channel on which we wait for timeouts.
 	var timer *time.Timer
-	// deadlines is a priority queue of upcoming timeout events (deadlines)
+	// deadlines is a priority queue of upcoming timeout events (deadlines).
 	var deadlines deadlineHeap
 	// timeout is the channel managed by timer, or nil if there are no upcoming
 	// deadlines.
@@ -146,7 +146,7 @@ func handleMessage(
 
 	// deadline for receiving next message
 	if batch.MessageDeadline != nil {
-		batch.MessageDeadline.Disable()
+		batch.MessageDeadline.Disabled = true
 	}
 	batch.MessageDeadline = &deadline{
 		When: now.Add(config.MessageTimeout),
@@ -180,12 +180,12 @@ func handleTimeout(
 		}
 		closest := (*deadlines)[0]
 		// The deadline is not in the future, or it's defunct.
-		return !now.Before(closest.When) || closest.Disabled()
+		return !now.Before(closest.When) || closest.Disabled
 	}
 
 	for ; deadlineReady(); now = time.Now() {
 		passed := heap.Pop(deadlines).(*deadline)
-		if passed.Disabled() {
+		if passed.Disabled {
 			continue
 		}
 
@@ -198,21 +198,12 @@ func handleTimeout(
 
 // deadline describes a future event, such as a batch needing to be flushed.
 type deadline struct {
-	// When is the time at which this deadline is reached (expires); or, if
-	// When is zero, this deadline is considered "disabled" and can be
-	// discarded.
+	// When is the time at which this deadline is reached (expires).
 	When time.Time
+	// Disabled says whether to ignore this deadline.
+	Disabled bool
 	// Key is the key of the bucket to which this deadline applies.
 	Key uint64
-}
-
-func (d *deadline) Disable() {
-	var zeroTime time.Time
-	d.When = zeroTime
-}
-
-func (d *deadline) Disabled() bool {
-	return d.When.IsZero()
 }
 
 // deadlineHeap is a min-heap of deadline, where a deadline A is less than
@@ -250,11 +241,11 @@ type bucket struct {
 
 func (b *bucket) Reset() {
 	if b.MessageDeadline != nil {
-		b.MessageDeadline.Disable()
+		b.MessageDeadline.Disabled = true
 		b.MessageDeadline = nil
 	}
 	if b.BatchDeadline != nil {
-		b.BatchDeadline.Disable()
+		b.BatchDeadline.Disabled = true
 		b.BatchDeadline = nil
 	}
 	b.Messages = nil
