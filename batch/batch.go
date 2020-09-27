@@ -25,13 +25,13 @@
 // involving two timeouts and a size limit:
 //
 // • BatchTimeout: If a batch is non-empty for this amount of time, then it is
-//   flushed.
+// flushed.
 //
 // • MessageTimeout: If this amount of time elapses after receiving a message
-//   and before receiving the next message, then the batch is flushed.
+// and before receiving the next message, then the batch is flushed.
 //
 // • MaxBatchSize: If a batch accumulates more than this many messages, then it
-//   is flushed.
+// is flushed.
 //
 // The advantage of having two timeouts is that latency can be reduced on
 // average while still allowing for "long runs" of closely-spaced messages to
