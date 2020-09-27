@@ -24,11 +24,13 @@
 // latency reduction (small batches), this package uses a batching scheme
 // involving two timeouts and a size limit:
 //
-// - BatchTimeout: If a batch is non-empty for this amount of time, then it is
+// • BatchTimeout: If a batch is non-empty for this amount of time, then it is
 //   flushed.
-// - MessageTimeout: If this amount of time elapses after receiving a message
+//
+// • MessageTimeout: If this amount of time elapses after receiving a message
 //   and before receiving the next message, then the batch is flushed.
-// - MaxBatchSize: If a batch accumulates more than this many messages, then it
+//
+// • MaxBatchSize: If a batch accumulates more than this many messages, then it
 //   is flushed.
 //
 // The advantage of having two timeouts is that latency can be reduced on
