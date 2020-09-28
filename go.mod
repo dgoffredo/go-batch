@@ -1,4 +1,4 @@
-module github.com/dgoffredo/go-batch/batch
+module github.com/dgoffredo/go-batch
 
 go 1.14
 

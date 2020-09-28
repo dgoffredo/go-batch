@@ -1,12 +1,13 @@
 package main
 
 import (
-	"batch"
 	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/dgoffredo/go-batch/batch"
 )
 
 func main() {
