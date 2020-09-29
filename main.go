@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"time"
@@ -11,6 +12,8 @@ import (
 )
 
 func main() {
+	messageTimeout, batchTimeout, maxBatchSize := parseCommandLine()
+
 	messages := make(chan interface{})
 
 	config := batch.Config{
@@ -22,8 +25,9 @@ func main() {
 			fmt.Println("flushed bucket for strings of length ", key, ": ", messages)
 		},
 		Source:         messages,
-		MessageTimeout: time.Second,
-		BatchTimeout:   time.Second * 6}
+		MessageTimeout: messageTimeout,
+		BatchTimeout:   batchTimeout,
+		MaxBatchSize:   maxBatchSize}
 
 	go batch.Consume(context.TODO(), config)
 
@@ -34,4 +38,22 @@ func main() {
 		messages <- scanner.Text()
 	}
 	close(messages)
+}
+
+func parseCommandLine() (time.Duration, time.Duration, int) {
+	var messageTimeout int
+	var batchTimeout int
+	var maxBatchSize int
+
+	flag.IntVar(&messageTimeout, "messageTimeout", 1000, "message timeout (milliseconds)")
+	flag.IntVar(&batchTimeout, "batchTimeout", 5000, "batch timeout (milliseconds)")
+	flag.IntVar(&maxBatchSize, "maxBatchSize", 0, "maximum messages per batch")
+
+	flag.Parse()
+
+	ms := func(howMany int) time.Duration {
+		return time.Millisecond * time.Duration(howMany)
+	}
+
+	return ms(messageTimeout), ms(batchTimeout), maxBatchSize
 }
