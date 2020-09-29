@@ -8,10 +8,10 @@
 // translates the events into updates suitable for another (perhaps newer)
 // system, and then sends those updates to the other system.
 //
-//     +-----------+      +-----+      +------------+
-//     | upstream  | ---> | you | ---> | downstream |
-//     | producer  |      +-----+      |  service   |
-//     +-----------+                   +------------+
+//     ╔═══════════╗      ╔═════╗      ╔════════════╗
+//     | upstream  | ───> | you | ───> | downstream |
+//     | producer  |      ╚═════╝      |  service   |
+//     ╚═══════════╝                   ╚════════════╝
 //
 // The events produced by the upstream system can often be combined by your
 // translator before being sent downstream. For example, if a user adds a
